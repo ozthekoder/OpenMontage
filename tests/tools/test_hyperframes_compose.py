@@ -241,6 +241,36 @@ def test_runtime_check_fails_when_npm_package_unresolvable(monkeypatch):
     assert rc["npm_package"] == "hyperframes"
 
 
+def test_npm_resolve_timeout_is_not_cached(monkeypatch):
+    """Regression: a single slow `npm view` (cold shim, busy machine) used to
+    be cached for the whole process, marking HyperFrames unavailable until
+    restart. Timeouts are transient and must be retried on the next check."""
+    import subprocess
+
+    import tools.video.hyperframes_compose as hf_mod
+
+    monkeypatch.setattr(HyperFramesCompose, "_npm_resolve_cache", None, raising=False)
+    monkeypatch.setattr(hf_mod.shutil, "which", lambda name: f"/fake/{name}")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout"))
+        return subprocess.CompletedProcess(cmd, 0, stdout="0.8.223\n", stderr="")
+
+    monkeypatch.setattr(hf_mod.subprocess, "run", fake_run)
+
+    first = HyperFramesCompose._resolve_npm_package()
+    assert "timeout" in first["error"]
+    assert HyperFramesCompose._npm_resolve_cache is None
+
+    second = HyperFramesCompose._resolve_npm_package()
+    assert second == {"version": "0.8.223"}
+    assert HyperFramesCompose._resolve_npm_package() == {"version": "0.8.223"}
+    assert len(calls) == 2, "successful resolve must be cached"
+
+
 def test_runtime_check_succeeds_when_npm_resolves(monkeypatch):
     monkeypatch.setattr(
         HyperFramesCompose, "_npm_resolve_cache", None, raising=False

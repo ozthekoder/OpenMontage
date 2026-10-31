@@ -245,8 +245,11 @@ class HyperFramesCompose(BaseTool):
     #   {"version": "0.4.5"}   → package resolves
     #   {"error": "<short>"}   → resolution failed (offline, unpublished, etc.)
     # We cache per-process so the first call pays ~2-5s and subsequent calls
-    # (get_info spam from the registry) are free.
+    # (get_info spam from the registry) are free. Transient failures
+    # (timeouts, spawn errors) are not cached so a cold npm shim or a busy
+    # machine doesn't mark the runtime unavailable for the whole session.
     _npm_resolve_cache: Optional[dict[str, str]] = None
+    _NPM_RESOLVE_TIMEOUT_S = 15
     _cli_probe_cache: Optional[dict[str, str]] = None
 
     @classmethod
@@ -276,8 +279,8 @@ class HyperFramesCompose(BaseTool):
         on PATH, which meant `runtime_available: True` on any machine with
         Node + FFmpeg — even offline, even if npm was down, even if the
         package was unpublished. This method performs a cheap
-        `npm view hyperframes version` (5s timeout) and caches the answer
-        for the rest of the process.
+        `npm view hyperframes version` and caches definitive answers
+        (resolved / not found) for the rest of the process.
 
         Returns {"version": "X.Y.Z"} on success, {"error": "<short>"} on any
         failure (404, timeout, network error, npm missing). Never raises.
@@ -295,14 +298,14 @@ class HyperFramesCompose(BaseTool):
                 [npm, "view", cls._NPM_PACKAGE, "version"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=cls._NPM_RESOLVE_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired:
-            cls._npm_resolve_cache = {"error": "timeout (5s) — offline or slow registry"}
-            return cls._npm_resolve_cache
+            return {
+                "error": f"timeout ({cls._NPM_RESOLVE_TIMEOUT_S}s) — offline or slow registry"
+            }
         except (OSError, subprocess.SubprocessError) as e:
-            cls._npm_resolve_cache = {"error": f"npm view failed: {type(e).__name__}"}
-            return cls._npm_resolve_cache
+            return {"error": f"npm view failed: {type(e).__name__}"}
 
         if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()
