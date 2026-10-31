@@ -19,6 +19,10 @@ from tools.base_tool import (
     ToolTier,
 )
 
+# stabilityai removed stable-diffusion-2-1-base from the Hub; this is the
+# community-maintained mirror of that checkpoint.
+DEFAULT_SD_MODEL = "sd2-community/stable-diffusion-2-1-base"
+
 
 class LocalDiffusion(BaseTool):
     name = "local_diffusion"
@@ -65,7 +69,7 @@ class LocalDiffusion(BaseTool):
             "height": {"type": "integer", "default": 512},
             "model": {
                 "type": "string",
-                "default": "stabilityai/stable-diffusion-2-1-base",
+                "default": DEFAULT_SD_MODEL,
             },
             "seed": {"type": "integer"},
             "num_inference_steps": {"type": "integer", "default": 30},
@@ -111,7 +115,7 @@ class LocalDiffusion(BaseTool):
         width = inputs.get("width", 512)
         height = inputs.get("height", 512)
         seed = inputs.get("seed")
-        model_id = inputs.get("model", "stabilityai/stable-diffusion-2-1-base")
+        model_id = inputs.get("model", DEFAULT_SD_MODEL)
         steps = inputs.get("num_inference_steps", 30)
         guidance = inputs.get("guidance_scale", 7.5)
 
